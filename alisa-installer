@@ -16,49 +16,6 @@ VERSION="0.1"
 DISTRONAME="Alisa Linux"
 APPTITLE="${DISTRONAME} Installer ${VERSION}"
 
-startmenu(){
-	_cmds=()
-	_cmds+=("setlocale" "Select Locale(s)")
-	_cmds+=("setkeymap" "Select A Keymap")
-	_cmds+=("networkconf" "Network Configuration")
-	_cmds+=("timezone" "Timezone")
-	_cmds+=("diskpart" "Installation Destination")
-	_cmds+=("rootpass" "Root Password")
-	_cmds+=("usercreate" "User Creation")
-	_cmds+=("instprof" "Install Profile")
-	_command="$(whiptail --backtitle "${APPTITLE}" \
-		   --menu --notags "" 0 0 0 \
-		   "${_cmds[@]}" 3>&1 1>&2 2>&3)"
-	if [ "$?" = "0" ]; then
-		case ${_command} in
-			"setlocale")
-				_setlocale
-				;;
-			"setkeymap")
-				_setkeymap
-				;;
-			"networkconf")
-				_network
-				;;
-			"timezone")
-				_timezone
-				;;
-			"diskpart")
-				_diskpart
-				;;
-			"rootpass")
-				_rootpass
-				;;
-			"usercreate")
-				_usercreate
-				;;
-			"instprof")
-				_instprof
-				;;
-		esac
-	fi
-}
-
 _setlocale(){
 	langs="$(ls /usr/share/i18n/locales | sed -z "s/\n/,/g")"
 	opts=()
@@ -69,7 +26,7 @@ _setlocale(){
 	done
 	IFS=$IFSOLD
 	locale="$(whiptail --backtitle "${APPTITLE}" \
-			   --checklist "Select locale(s)" 0 0 0 \
+			   --checklist "Select locale(s)" 25 50 14 \
 			   "${opts[@]}" 3>&1 1>&2 2>&3)"
 	return 0
 }
@@ -83,17 +40,52 @@ _setkeymap(){
 		opts+=("${key}" "")
 	done
 	IFS=$IFSOLD
-	echo ${opts[0]}
 	keymap="$(whiptail --backtitle "${APPTITLE}" \
-			   --menu "Select a keymap" 0 0 0 \
+			   --menu "Select a keymap" 25 50 14 \
 			   "${opts[@]}" 3>&1 1>&2 2>&3)"
-	loadkeys "${keymap}"
+	#loadkeys "${keymap}"
 	return 0
 }
 
 _network(){
-	nmtui
-	startmenu
+	whiptail --backtitle "${APPTITLE}" \
+		 --yesno "Configure network?" 0 0 0
+	if [ "$?" = "1" ]; then
+		return 0
+	else
+		 nmtui
+		return 0
+	fi
+}
+
+_timezone(){
+	regions=(
+		"Africa" "America" "Atlantica" "Arctic" "Asia" "Atlantic" 
+		"Australia" "Brazil" "Canada" "Chile" "Europe" "Indian" 
+		"Mexico" "Pacific" "US"
+	)
+	opts=()
+	for region in "${regions[@]}"; do
+		opts+=("${region}" "")
+	done
+	timezone="$(whiptail --backtitle "${APPTITLE}" \
+			     --menu "Select A Timezone" 25 50 14 \
+			     "${opts[@]}" 3>&1 1>&2 2>&3)"
+	
+	cities="$(ls /usr/share/zoneinfo/${timezone} | sed -z "s/\n/,/g")"
+	opts=()
+	IFSOLD=$IFS
+	IFS=,
+	for city in ${cities[@]}; do
+		opts+=("${city}" "")
+	done
+	IFS=$IFSOLD
+	timezone="${timezone}/$(whiptail --backtitle "${APPTITLE}" \
+			   --menu "Select locale(s)" 25 50 14 \
+			   "${opts[@]}" 3>&1 1>&2 2>&3)"
+
+	timezone="/usr/share/zoneinfo/"${timezone}""
+	return 0
 }
 
 _diskpart(){
@@ -106,13 +98,23 @@ _diskpart(){
 	done
 	IFS=$IFSOLD
 	device=$(whiptail --backtitle "${APPTITLE}" \
-			--menu "Select a drive" 0 0 0 \
-			"${opts[@]}" 3>&1 1>&2 2>&3)
+			  --menu "Select a drive" 0 0 0 \
+			  "${opts[@]}" 3>&1 1>&2 2>&3)
 	if [ "$?" != "0" ]; then
 		return 1
 	fi
 	echo ${dev%%\ *}
-	startmenu
+	#cgdisk ${dev}
+	return 0
 }
 
-startmenu
+whiptail --yesno "Welcome to Alisa Linux installer! \n\n Select 'Continue' to install this OS, or 'Cancel' not to do." 20 50 10
+if [ "$?" = "1" ]; then
+	exit 1
+fi
+_setlocale
+_setkeymap
+_network
+_timezone
+_diskpart
+
