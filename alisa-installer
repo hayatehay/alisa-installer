@@ -26,7 +26,8 @@ _setlocale(){
 	done
 	IFS=$IFSOLD
 	locale="$(whiptail --backtitle "${APPTITLE}" \
-			   --checklist "Select locale(s)" 25 50 14 \
+			   --title "Language Support" \
+			   --checklist "" 25 50 14 \
 			   "${opts[@]}" 3>&1 1>&2 2>&3)"
 	return 0
 }
@@ -41,21 +42,34 @@ _setkeymap(){
 	done
 	IFS=$IFSOLD
 	keymap="$(whiptail --backtitle "${APPTITLE}" \
-			   --menu "Select a keymap" 25 50 14 \
+			   --title "Keyboard" \
+			   --menu "" 25 50 14 \
 			   "${opts[@]}" 3>&1 1>&2 2>&3)"
 	#loadkeys "${keymap}"
 	return 0
 }
 
-_network(){
+_netconn(){
 	whiptail --backtitle "${APPTITLE}" \
-		 --yesno "Configure network?" 0 0 0
+		 --yesno "Configure network connection?" 0 0 0
 	if [ "$?" = "1" ]; then
-		return 0
+		:
 	else
 		 nmtui
-		return 0
 	fi
+}
+
+_hostname(){
+	hostname="$(whiptail --title "Host name" \
+			     --inputbox "This is the name of your computer on the network. It can't start or end with a hyphen." \
+			     10 50 alisalinux 3>&1 1>&2 2>&3)"
+	echo "${hostname}" | grep -e '^-' -e '-$'
+	if [ "$?" = "0" ]; then
+		whiptail --title "Host name" \
+			 --msgbox "Don't start or end with a hyphen!" 0 0
+		_hostname
+	fi
+	return 0
 }
 
 _timezone(){
@@ -69,7 +83,8 @@ _timezone(){
 		opts+=("${region}" "")
 	done
 	timezone="$(whiptail --backtitle "${APPTITLE}" \
-			     --menu "Select A Timezone" 25 50 14 \
+			     --title "Timezone" \
+			     --menu "" 25 50 14 \
 			     "${opts[@]}" 3>&1 1>&2 2>&3)"
 	
 	cities="$(ls /usr/share/zoneinfo/${timezone} | sed -z "s/\n/,/g")"
@@ -81,7 +96,8 @@ _timezone(){
 	done
 	IFS=$IFSOLD
 	timezone="${timezone}/$(whiptail --backtitle "${APPTITLE}" \
-			   --menu "Select locale(s)" 25 50 14 \
+			   --title "Timezone" \
+			   --menu "" 25 50 14 \
 			   "${opts[@]}" 3>&1 1>&2 2>&3)"
 
 	timezone="/usr/share/zoneinfo/"${timezone}""
@@ -98,23 +114,45 @@ _diskpart(){
 	done
 	IFS=$IFSOLD
 	device=$(whiptail --backtitle "${APPTITLE}" \
-			  --menu "Select a drive" 0 0 0 \
+			  --title "Installation Destinaton" \
+			  --menu "" 0 0 0 \
 			  "${opts[@]}" 3>&1 1>&2 2>&3)
 	if [ "$?" != "0" ]; then
 		return 1
 	fi
-	echo ${dev%%\ *}
-	#cgdisk ${dev}
+	cgdisk ${dev%%\ *}
 	return 0
 }
 
-whiptail --yesno "Welcome to Alisa Linux installer! \n\n Select 'Continue' to install this OS, or 'Cancel' not to do." 20 50 10
+_rootpass(){
+	rootpassword="$(whiptail --backtitle "${APPTITLE}" \
+				 --title "Root Password" \
+				 --passwordbox "Set the longest possible password using a mix of upper - and lower-case alphabets, numbers, and symbols.\n" \
+				 13 50 3>&1 1>&2 2>&3)"
+	rootpassconfirm="$(whiptail --backtitle "${APPTITLE}" \
+				    --title "Root Password" \
+				    --passwordbox "Enter again for confirmation.\n" \
+				    13 50 3>&1 1>&2 2>&3)"
+	if [ "${rootpassword}" != "${rootpassconfirm}" ]; then
+		whiptail --backtitle "${APPTITLE}" \
+			 --title "Root Password" \
+			 --msgbox "Passwords don't match! Please try again." 0 0
+		_rootpass
+	fi
+	return 0
+}
+
+whiptail --backtitle "${APPTITLE}" \
+	 --title "Welcome to the Alisa Linux Installer!" \
+	 --yesno "Select 'Continue' to install this OS, or 'Cancel' not to do." 20 50 10
 if [ "$?" = "1" ]; then
 	exit 1
 fi
 _setlocale
 _setkeymap
-_network
+_netconn
+_hostname
 _timezone
 _diskpart
+_rootpass
 
