@@ -18,7 +18,8 @@ APPTITLE="${DISTRONAME} Installer ${VERSION}"
 
 startmenu(){
 	_cmds=()
-	_cmds+=("setlocale" "Language & Keymap")
+	_cmds+=("setlocale" "Select Locale(s)")
+	_cmds+=("setkeymap" "Select A Keymap")
 	_cmds+=("networkconf" "Network Configuration")
 	_cmds+=("timezone" "Timezone")
 	_cmds+=("diskpart" "Installation Destination")
@@ -33,9 +34,11 @@ startmenu(){
 			"setlocale")
 				_setlocale
 				;;
+			"setkeymap")
+				_setkeymap
+				;;
 			"networkconf")
-				nmtui
-				startmenu
+				_network
 				;;
 			"timezone")
 				_timezone
@@ -54,22 +57,33 @@ startmenu(){
 }
 
 _setlocale(){
-	langs=$(ls /usr/share/i18n/locales | sed s/@/-/g)
+	langs="$(ls /usr/share/i18n/locales | sed -z "s/\n/,/g")"
 	opts=()
-	IFDOLD=$IFS
-	IFS=$'\n'
+	IFSOLD=$IFS
+	IFS=,
 	for lang in ${langs[@]}; do
-		opts+=("${lang}" "${lang}" "OFF")
+		opts+=("${lang}" "" "OFF")
 	done
 	IFS=$IFSOLD
 	locale="$(whiptail --backtitle "${APPTITLE}" \
-			   --checklist --notags "Select locale(s)" 0 0 0 \
-			   "${opts}" 3>&1 1>&2 2>&3)"
-	echo ${locale}
-	# Select a keymap
-	_keys="$(localectl list-keymaps)"
+			   --checklist "Select locale(s)" 0 0 0 \
+			   "${opts[@]}" 3>&1 1>&2 2>&3)"
+}
 
-	startmenu
+_setkeymap(){
+	# こ↑こ↓要修正
+	_keys="$(localectl list-keymaps | sed -z "s/\n/,/g")"
+	opts=()
+	IFSOLD=$IFS
+	IFS=,
+	for key in ${keys[@]}; do
+		opts+=("${key}" "")
+	done
+	IFS=$IFSOLD
+	keymap="$(whiptail --backtitle "${APPTITLE}" \
+			   --menu "Select a keymap" 0 0 0 \
+			   "${opts[@]}" 3>&1 1>&2 2>&3)"
+	echo ${keymap}
 }
 
 _network(){
