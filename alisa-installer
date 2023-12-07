@@ -47,10 +47,13 @@ startmenu(){
 				_diskpart
 				;;
 			"rootpass")
-				nmtui
+				_rootpass
 				;;
-			"networkconf")
-				nmtui
+			"usercreate")
+				_usercreate
+				;;
+			"instprof")
+				_instprof
 				;;
 		esac
 	fi
@@ -68,11 +71,11 @@ _setlocale(){
 	locale="$(whiptail --backtitle "${APPTITLE}" \
 			   --checklist "Select locale(s)" 0 0 0 \
 			   "${opts[@]}" 3>&1 1>&2 2>&3)"
+	return 0
 }
 
 _setkeymap(){
-	# こ↑こ↓要修正
-	_keys="$(localectl list-keymaps | sed -z "s/\n/,/g")"
+	keys="$(localectl list-keymaps | sed -z "s/\n/,/g")"
 	opts=()
 	IFSOLD=$IFS
 	IFS=,
@@ -80,10 +83,12 @@ _setkeymap(){
 		opts+=("${key}" "")
 	done
 	IFS=$IFSOLD
+	echo ${opts[0]}
 	keymap="$(whiptail --backtitle "${APPTITLE}" \
 			   --menu "Select a keymap" 0 0 0 \
 			   "${opts[@]}" 3>&1 1>&2 2>&3)"
-	echo ${keymap}
+	loadkeys "${keymap}"
+	return 0
 }
 
 _network(){
