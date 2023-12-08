@@ -323,22 +323,22 @@ _main(){
 	if [ "$?" = "1" ]; then
 		exit 1
 	fi
-	#_setlocale
-	#_setkeymap
-	#_netconn
-	#whiptail --backtitle "${APPTITLE}" \
-	#	 --title "!!!WARNING!!!" \
-	#	 --yesno "There is no going back from here on.\n Do you really want to install?" 0 0 0
-	#if [ "$?" = "1" ]; then
-	#	exit 1
-	#else
-	#	_hostname
-	#	_timezone
-	#	_diskpart
-	#	_drvformat
+	_setlocale
+	_setkeymap
+	_netconn
+	whiptail --backtitle "${APPTITLE}" \
+		 --title "!!!WARNING!!!" \
+		 --yesno "There is no going back from here on.\n Do you really want to install?" 0 0 0
+	if [ "$?" = "1" ]; then
+		exit 1
+	else
+		_hostname
+		_timezone
+		_diskpart
+		_drvformat
 		_installpkg
-	#	_rootpass
-	#fi
+		_rootpass
+	fi
 }
 
 _pressanykey(){
