@@ -57,7 +57,14 @@ _setlocale(){
 			   --checklist "" 20 35 14 \
 			   "${opts[@]}" 3>&1 1>&2 2>&3)"
 	if [ $? = 1 ]; then
-		exit 0
+		whiptail --backtitle "${APPTITLE}" \
+			 --title "Abort Confirmation" \
+			 --yesno "Are you really going to quit installation?" 0 0 0
+		if [ "$?" = "1" ]; then
+			_setlocale
+		else
+			exit 1
+		fi
 	fi
 	return 0
 }
@@ -77,7 +84,14 @@ _setkeymap(){
 			   "${opts[@]}" 3>&1 1>&2 2>&3)"
 	loadkeys "${keymap}"
 	if [ $? = 1 ]; then
-		exit 0
+		whiptail --backtitle "${APPTITLE}" \
+			 --title "Abort Confirmation" \
+			 --yesno "Are you really going to quit installation?" 0 0 0
+		if [ "$?" = "1" ]; then
+			_setkeymap
+		else
+			exit 1
+		fi
 	fi
 	return 0
 }
@@ -93,16 +107,17 @@ _netconn(){
 }
 
 _hostname(){
-	hostname="$(whiptail --title "Host name" \
-			     --inputbox "This is the name of your computer on the network. It can't start or end with a hyphen." \
+	hostname="$(whiptail --backtitle "${APPTITLE}" \
+			     --title "Host name" \
+			     --inputbox "This is the name of your computer on the network. You can use alphabets, numbers, and hyphens. The first character must be an alphabet and the last character can't be a hyphen or a period." \
 			     10 50 alisalinux 3>&1 1>&2 2>&3)"
 	if [ "$?" = "1" ]; then
 		exit 0
 	fi
-	echo "${hostname}" | grep -e '^-' -e '-$'
+	echo "${hostname}" | grep -e '^[-.0-9]' -e '[-.]$' -e '\s'
 	if [ "$?" = "0" ]; then
 		whiptail --title "Host name" \
-			 --msgbox "Don't start or end with a hyphen!" 0 0
+			 --msgbox "Contains characters that can't be used." 0 0
 		_hostname
 	fi
 	return 0
@@ -110,7 +125,7 @@ _hostname(){
 
 _timezone(){
 	regions=(
-		"Africa" "America" "Atlantica" "Arctic" "Asia" "Atlantic" 
+		"UTC" "Africa" "America" "Atlantica" "Arctic" "Asia" "Atlantic" 
 		"Australia" "Brazil" "Canada" "Chile" "Europe" "Indian" 
 		"Mexico" "Pacific" "US"
 	)
@@ -120,21 +135,23 @@ _timezone(){
 	done
 	timezone="$(whiptail --backtitle "${APPTITLE}" \
 			     --title "Timezone" \
-			     --menu "" 20 35 14 \
+			     --menu "" --nocancel 20 35 14 \
 			     "${opts[@]}" 3>&1 1>&2 2>&3)"
 	
-	cities="$(ls /usr/share/zoneinfo/${timezone} | sed -z "s/\n/,/g")"
-	opts=()
-	IFSOLD=$IFS
-	IFS=,
-	for city in ${cities[@]}; do
-		opts+=("${city}" "")
-	done
-	IFS=$IFSOLD
-	timezone="${timezone}/$(whiptail --backtitle "${APPTITLE}" \
-			   --title "Timezone" \
-			   --menu "" 20 35 14 \
-			   "${opts[@]}" 3>&1 1>&2 2>&3)"
+	if [ "${timezone}" != "UTC" ]; then
+		cities="$(ls /usr/share/zoneinfo/${timezone} | sed -z "s/\n/,/g")"
+		opts=()
+		IFSOLD=$IFS
+		IFS=,
+		for city in ${cities[@]}; do
+			opts+=("${city}" "")
+		done
+		IFS=$IFSOLD
+		timezone="${timezone}/$(whiptail --backtitle "${APPTITLE}" \
+				   --title "Timezone" \
+				   --menu "" --nocancel 20 35 14 \
+				   "${opts[@]}" 3>&1 1>&2 2>&3)"
+	fi
 
 	timezone="/usr/share/zoneinfo/"${timezone}""
 	return 0
@@ -150,13 +167,16 @@ _diskpart(){
 	done
 	IFS=$IFSOLD
 	drive=$(whiptail --backtitle "${APPTITLE}" \
-			  --title "Installation Destinaton" \
-			  --menu "Select installation destination drive" 20 35 14 \
-			  "${opts[@]}" 3>&1 1>&2 2>&3)
-	if [ "$?" != "0" ]; then
-		return 1
-	fi
+			 --title "Installation Destinaton" \
+			 --menu "Select installation destination drive" --nocancel 20 35 14 \
+			 "${opts[@]}" 3>&1 1>&2 2>&3)
 	cfdisk ${drive%%\ *}
+	if [ "$?" != "0" ]; then
+		whiptail --backtitle "${APPTITLE}" \
+			 --title "Installation Destination" \
+			 --msgbox "You seem to have selected a disable drive. Please select another one." 0 0
+		_diskpart
+	fi
 
 	parts="$(lsblk ${drive%%\ *} -pnl -o NAME | grep [0-9])"
 	formats=("Btrfs" "ext2" "ext3" "ext4" "FAT16" "FAT32")
@@ -174,22 +194,25 @@ _diskpart(){
 	for part in ${opts1[@]}; do
 		fs="$(whiptail --backtitle "${APPTITLE}" \
 			       --title "Installation Destination" \
-			       --menu "Select the format of "${part}"." 0 0 0 \
+			       --menu "Select the format of "${part}"." --nocancel 0 0 0 \
 			       "${opts2[@]}" 3>&1 1>&2 2>&3)"
 		case ${fs} in
 			"Btrfs")
-				mkfs.btrfs ${part}
+				mkfs.btrfs -L "${fslabel}" "${part}"
 				;;
 			"ext2" | "ext3" | "ext4")
-				mkfs.${fs} ${part}
+				mkfs.${fs} -L "${fslabel}" ${part}"
 				;;
 			"FAT16")
-				mkfs.fat -F ${part}
+				mkfs.fat -F "${part}"
+				fatlabel "${part}" ${fslabel}"
 				;;
 			"FAT32")
-				mkfs.fat -F 32 ${part}
+				mkfs.fat -F 32 "${part}"
+				fatlabel "${part}" "${fslabel}"
 				;;
 		esac
+		_pressanykey
 	done
 }
 
@@ -197,11 +220,11 @@ _rootpass(){
 	rootpassword="$(whiptail --backtitle "${APPTITLE}" \
 				 --title "Root Password" \
 				 --passwordbox "Set the longest possible password using a mix of upper - and lower-case alphabets, numbers, and symbols.\n" \
-				 13 50 3>&1 1>&2 2>&3)"
+				 --nocancel 13 50 3>&1 1>&2 2>&3)"
 	rootpassconfirm="$(whiptail --backtitle "${APPTITLE}" \
 				    --title "Root Password" \
 				    --passwordbox "Enter again for confirmation.\n" \
-				    13 50 3>&1 1>&2 2>&3)"
+				    --nocancel 13 50 3>&1 1>&2 2>&3)"
 	if [ "${rootpassword}" != "${rootpassconfirm}" ]; then
 		whiptail --backtitle "${APPTITLE}" \
 			 --title "Root Password" \
@@ -211,17 +234,35 @@ _rootpass(){
 	return 0
 }
 
-whiptail --backtitle "${APPTITLE}" \
-	 --title "Welcome to the Alisa Linux Installer!" \
-	 --yesno "Select 'Continue' to install this OS, or 'Cancel' not to do." 10 50 10
-if [ "$?" = "1" ]; then
-	exit 1
-fi
-_setlocale
-_setkeymap
-_netconn
-_hostname
-_timezone
-_diskpart
-_rootpass
+_main(){
+	whiptail --backtitle "${APPTITLE}" \
+		 --title "Welcome to the Alisa Linux Installer!" \
+		 --yesno "Select 'Continue' to install this OS, or 'Cancel' not to do." 10 50 10
+	if [ "$?" = "1" ]; then
+		exit 1
+	fi
+	_setlocale
+	_setkeymap
+	_netconn
+	whiptail --backtitle "${APPTITLE}" \
+		 --title "!!!WARNING!!!" \
+		 --yesno "There is no going back from here on.\n Do you really want to install?" 0 0 0
+	if [ "$?" = "1" ]; then
+		exit 1
+	else
+		_hostname
+		_timezone
+		_diskpart
+		_rootpass
+	fi
+}
+
+_pressanykey(){
+	_anykey=""
+	echo "Done! Press any key..."
+	read -n1 _anykey 
+}
+
+_main
+exit 0
 
