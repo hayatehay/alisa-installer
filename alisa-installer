@@ -105,22 +105,22 @@ _timezone(){
 }
 
 _diskpart(){
-	devs=$(lsblk -dpnl -o NAME,SIZE)
+	drvs=$(lsblk -dpnl -o NAME,SIZE)
 	opts=()
 	IFSOLD=$IFS
 	IFS=$'\n'
-	for dev in ${devs}; do
+	for drv in ${drvs}; do
 		opts+=("${dev}" "")
 	done
 	IFS=$IFSOLD
-	device=$(whiptail --backtitle "${APPTITLE}" \
+	drive=$(whiptail --backtitle "${APPTITLE}" \
 			  --title "Installation Destinaton" \
 			  --menu "" 0 0 0 \
 			  "${opts[@]}" 3>&1 1>&2 2>&3)
 	if [ "$?" != "0" ]; then
 		return 1
 	fi
-	cgdisk ${dev%%\ *}
+	cgdisk ${drive%%\ *}
 	return 0
 }
 
