@@ -56,11 +56,11 @@ _setlocale(){
 			   --title "Language Support" \
 			   --checklist "" 20 35 14 \
 			   "${opts[@]}" 3>&1 1>&2 2>&3)"
-	if [ $? = 1 ]; then
+	if [ "$?" != "0" ]; then
 		whiptail --backtitle "${APPTITLE}" \
 			 --title "Abort Confirmation" \
 			 --yesno "Are you really going to quit installation?" 0 0 0
-		if [ "$?" = "1" ]; then
+		if [ "$?" == "1" ]; then
 			_setlocale
 		else
 			exit 1
@@ -82,8 +82,7 @@ _setkeymap(){
 			   --title "Keyboard" \
 			   --menu "" 20 50 14 \
 			   "${opts[@]}" 3>&1 1>&2 2>&3)"
-	loadkeys "${keymap}"
-	if [ $? = 1 ]; then
+	if [ "$?" != "0" ]; then
 		whiptail --backtitle "${APPTITLE}" \
 			 --title "Abort Confirmation" \
 			 --yesno "Are you really going to quit installation?" 0 0 0
@@ -93,6 +92,7 @@ _setkeymap(){
 			exit 1
 		fi
 	fi
+	loadkeys "${keymap}"
 	return 0
 }
 
@@ -170,7 +170,8 @@ _diskpart(){
 			 --title "Installation Destinaton" \
 			 --menu "Select installation destination drive" --nocancel 20 35 14 \
 			 "${opts[@]}" 3>&1 1>&2 2>&3)
-	cfdisk ${drive%%\ *}
+	drive=${drive%%\ *}
+	cfdisk ${drive}
 	if [ "$?" != "0" ]; then
 		whiptail --backtitle "${APPTITLE}" \
 			 --title "Installation Destination" \
@@ -178,6 +179,31 @@ _diskpart(){
 		_diskpart
 	fi
 
+	if [ -d /sys/firmware/efi/efivars ]; then
+		bootpartition="$(gdisk -l "${drive}" | grep "EF00" | awk '{print $1}')"  
+		if [ "${bootpartition}" = "" ]; then
+			whiptail --backtitle "${APPTITLE}" \
+				 --title "Installation Destination" \
+				 --msgbox "EFI system partition not found! Please try again." 0 0
+			_diskpart
+		else
+			bootpartition="${drive}${bootpartition}"
+		fi
+	else
+		bootpartition="$(gdisk -l "${drive}" | grep "EF02" | awk '{print $1}')"
+		if [ "${bootpartition}" = "" ]; then
+			whiptail --backtitle "${APPTITLE}" \
+				 --title "Installation Destination" \
+				 -- msgbox "BIOS system partition not found! Please try again." 0 0
+			_diskpart
+		else
+			bootpartition="${drive}${bootpartition}"
+		fi
+	fi
+	echo $bootpartition
+}
+
+_drvformat(){
 	parts="$(lsblk ${drive%%\ *} -pnl -o NAME | grep [0-9])"
 	formats=("Btrfs" "ext2" "ext3" "ext4" "FAT16" "FAT32")
 	opts1=()
@@ -194,18 +220,21 @@ _diskpart(){
 	for part in ${opts1[@]}; do
 		fs="$(whiptail --backtitle "${APPTITLE}" \
 			       --title "Installation Destination" \
-			       --menu "Select the format of "${part}"." --nocancel 0 0 0 \
+			       --menu "Select the format of "${part}". If you want to select a different drive, press 'Cancel'." 0 0 0 \
 			       "${opts2[@]}" 3>&1 1>&2 2>&3)"
+		if [ "$?" != "0" ]; then
+			_diskpart
+		fi
 		case ${fs} in
 			"Btrfs")
 				mkfs.btrfs -L "${fslabel}" "${part}"
 				;;
 			"ext2" | "ext3" | "ext4")
-				mkfs.${fs} -L "${fslabel}" ${part}"
+				mkfs.${fs} -L "${fslabel}" "${part}"
 				;;
 			"FAT16")
 				mkfs.fat -F "${part}"
-				fatlabel "${part}" ${fslabel}"
+				fatlabel "${part}" "${fslabel}"
 				;;
 			"FAT32")
 				mkfs.fat -F 32 "${part}"
@@ -214,6 +243,59 @@ _diskpart(){
 		esac
 		_pressanykey
 	done
+}
+
+_installpkg(){
+	packages=("base" "base-devel" "dhcpcd" "networkmanager" "grub" "os-prober" 
+		 "sudo" "bash-completion" "man" "intel-ucode" "amd-ucode")
+
+	kernel="$(whiptail --backtitle "${APPTITLE}" \
+			   --title "Packages Installation" \
+			   --menu "Select a kernel." --nocancel 0 0 0 \
+			   "Stable" "" \
+			   "Longterm" "" \
+			   "Realtime" "" \
+			   "Realtime-LTS" "" \
+			   "Hardened" "" \
+			   "Zen" "" 3>&1 1>&2 2>&3)"
+	case ${kernel} in
+		"Stable")
+			packages+=("linux" "linux-headers")
+			;;
+		"Longterm")
+			packages+=("linux-lts" "linux-lts-headers")
+			;;
+		"Realtime")
+			packages+=("linux-rt" "linux-rt-headers")
+			;;
+		"Realtime-LTS")
+			packages+=("linux-rt-lts" "linux-rt-lts-headers")
+			;;
+		"Hardened")
+			packages+=("linux-hardened" "linux-hardened-headers")
+			;;
+		"Zen")
+			packages+=("linux-zen" "linux-zen-lts")
+			;;
+	esac
+
+	sounddrv="$(whiptail --backtitle "${APPTITLE}" \
+			   --title "Packages Installation" \
+			   --menu "Select a kernel." --nocancel 0 0 0 \
+			   "No install audio driver" "" \
+			   "PulseAudio" "" \
+			   "PipeWire" "" 3>&1 1>&2 2>&3)"
+	case ${sounddrv} in
+		"No install audio driver")
+			:
+			;;
+		"PulseAudio")
+			packages+=("pulseaudio" "pulseaudio-alsa" "pulseaudio-jack" "alsa-utils")
+			;;
+		"PipeWire")
+ 			packages+=("pipewire" "pipewire-alsa" "pipewire-jack" "pipewire-pulse" "gst-plugin-pipewire" "libpulse" "wireplumber" "alsa-utils")
+			;;
+	esac
 }
 
 _rootpass(){
@@ -237,24 +319,26 @@ _rootpass(){
 _main(){
 	whiptail --backtitle "${APPTITLE}" \
 		 --title "Welcome to the Alisa Linux Installer!" \
-		 --yesno "Select 'Continue' to install this OS, or 'Cancel' not to do." 10 50 10
+		 --yesno "Select \"Continue\" to install this OS, or \"Cancel\" not to do." 10 50 10
 	if [ "$?" = "1" ]; then
 		exit 1
 	fi
-	_setlocale
-	_setkeymap
-	_netconn
-	whiptail --backtitle "${APPTITLE}" \
-		 --title "!!!WARNING!!!" \
-		 --yesno "There is no going back from here on.\n Do you really want to install?" 0 0 0
-	if [ "$?" = "1" ]; then
-		exit 1
-	else
-		_hostname
-		_timezone
-		_diskpart
-		_rootpass
-	fi
+	#_setlocale
+	#_setkeymap
+	#_netconn
+	#whiptail --backtitle "${APPTITLE}" \
+	#	 --title "!!!WARNING!!!" \
+	#	 --yesno "There is no going back from here on.\n Do you really want to install?" 0 0 0
+	#if [ "$?" = "1" ]; then
+	#	exit 1
+	#else
+	#	_hostname
+	#	_timezone
+	#	_diskpart
+	#	_drvformat
+		_installpkg
+	#	_rootpass
+	#fi
 }
 
 _pressanykey(){
