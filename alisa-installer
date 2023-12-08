@@ -166,10 +166,10 @@ _diskpart(){
 		opts+=("${drv}" "")
 	done
 	IFS=$IFSOLD
-	drive=$(whiptail --backtitle "${APPTITLE}" \
+	drive="$(whiptail --backtitle "${APPTITLE}" \
 			 --title "Installation Destinaton" \
 			 --menu "Select installation destination drive" --nocancel 20 35 14 \
-			 "${opts[@]}" 3>&1 1>&2 2>&3)
+			 "${opts[@]}" 3>&1 1>&2 2>&3)"
 	drive=${drive%%\ *}
 	cfdisk ${drive}
 	if [ "$?" != "0" ]; then
@@ -194,13 +194,25 @@ _diskpart(){
 		if [ "${bootpartition}" = "" ]; then
 			whiptail --backtitle "${APPTITLE}" \
 				 --title "Installation Destination" \
-				 -- msgbox "BIOS system partition not found! Please try again." 0 0
+				 --msgbox "BIOS system partition not found! Please try again." 0 0
 			_diskpart
 		else
 			bootpartition="${drive}${bootpartition}"
 		fi
 	fi
-	echo $bootpartition
+	
+	rootparts="$(gdisk -l "${drive}" | grep "8300" | awk '{print $1}' | sed -z "s/\n/,/g")"
+	opts=()
+	IFSOLD=$IFS
+	IFS=,
+	for rootpart in ${rootparts[@]}; do
+		opts+=("${drive}${rootpart}" "")
+	done
+	IFS=$IFSOLD
+	rootpartition="$(whiptail --backtitle "${APPTITLE}" \
+				  --title "Installation Destination" \
+				  --menu "Select a root partition" --nocancel 0 0 0 \
+				  "${opts[@]}" 3>&1 1>&2 2>&3)"
 }
 
 _drvformat(){
@@ -247,7 +259,8 @@ _drvformat(){
 
 _installpkg(){
 	packages=("base" "base-devel" "dhcpcd" "networkmanager" "grub" "os-prober" 
-		 "sudo" "bash-completion" "man" "intel-ucode" "amd-ucode")
+		 "sudo" "bash-completion" "man" "intel-ucode" "amd-ucode" "zsh"
+		 "mtools" "dosfstools" "btrfs-progs")
 
 	kernel="$(whiptail --backtitle "${APPTITLE}" \
 			   --title "Packages Installation" \
@@ -316,6 +329,31 @@ _rootpass(){
 	return 0
 }
 
+_installation(){
+	mount ${rootpartition} /mnt
+	mkdir /mnt/boot
+	mount ${bootpartition} /mnt/boot
+	pacman -Syy
+	pacstrap /mnt ${packages[@]}
+	genfstab -U /mnt >> /mnt/etc/fstab
+	echo ${hostname} > /mnt/etc/hostname
+	echo ${locale} > /mnt/etc/locale.gen
+	sed -e "s/ /\n/g" -e "s/\"//g" -i /mnt/etc/locale.gen
+	sed -e "s/$/ UTF-8/g" -i /mnt/etc/locale.gen
+	arch-chroot locale-gen
+	echo "LANG=${lang}" > /mnt/etc/locale.conf
+	echo "KEYMAP=${keymap}" >> /mnt/etc/locale.conf
+	arch-chroot /mnt bash -c "echo root:${rootpassword} | chpasswd"
+	arch-chroot /mnt systemctl enable NetworkManager
+	arch-chroot /mnt ln -df ${timezone} /etc/localtime
+	if [ -d /sys/firmware/efi/efivars ]; then
+		arch-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB_UEFI
+	else
+		arch-chroot /mnt grub-install --target=i386-pc --recheck ${drive}
+	fi
+	arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
+}
+
 _main(){
 	whiptail --backtitle "${APPTITLE}" \
 		 --title "Welcome to the Alisa Linux Installer!" \
@@ -338,6 +376,7 @@ _main(){
 		_drvformat
 		_installpkg
 		_rootpass
+		_installation
 	fi
 }
 
